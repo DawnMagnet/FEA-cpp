@@ -148,16 +148,23 @@ public:
 	}
 	Mat calculateDis(Mat boundaryConditions) {
 		Mat k = nc::zeros<double>(3, 3);
-		[&]() {
-			vector<int> v = {3, 5, 6};
-			for (int i = 0; i < 3; ++i) {
-				for (int j = 0; j < 3; ++j) {
-					k(i, j) = K(v[i] - 1, v[j] - 1);
-				}
+		vector<int> v = {3, 5, 6};
+		for (int i = 0; i < 3; ++i) {
+			for (int j = 0; j < 3; ++j) {
+				k(i, j) = K(v[i] - 1, v[j] - 1);
 			}
-		}();
+		}
 		Mat f = boundaryConditions.transpose();
 		return nc::linalg::inv(k).dot(f);
+	}
+	Mat calculateStress(Mat boundaryConditions) {
+		Mat u = calculateDis(boundaryConditions);
+		Mat U = nc::zeros<double>(6, 1);
+		U(2, 0) = u(0, 0);
+		U(4, 0) = u(1, 0);
+		U(5, 0) = u(2, 0);
+		Mat F = K.dot(U);
+		cout << F << endl;
 	}
 };
 
@@ -174,6 +181,6 @@ int main() {
 	        ->assemble();
 	tsf->showK();
 
-	auto solu = tsf->calculateDis({0, 5, -10});
+	auto solu = tsf->calculateStress({0, 5, -10});
 	cout << solu;
 }
