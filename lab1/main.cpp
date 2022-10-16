@@ -137,6 +137,7 @@ public:
 			Mat t = PlaneTrussElementStiffness(E, A, e.length, e.theta);
 			K = PlaneTrussAssemble(K, t, e.idxa + 1, e.idxb + 1);
 		}
+		return this;
 	}
 	TrussSolveFramework *add(TrussPoint t) {
 		vp.push_back(t);
