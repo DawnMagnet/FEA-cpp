@@ -60,12 +60,12 @@ namespace PlaneTruss {
 		double S = sin(x);
 		return E * A / L * Mat({{C * C, C * S, -C * C, -C * S}, {C * S, S * S, -C * S, -S * S}, {-C * C, -C * S, C * C, C * S}, {-C * S, -S * S, C * S, S * S}});
 	}
-	Mat PlaneTrussElementStress(Mat E, double L, double theta, double u) {
+	Mat PlaneTrussElementStress(double E, double L, double theta, Mat u) {
 		// % PlaneTrussElementStress This function returns the element stress % given the modulus of elasticity E, the % the length L, the angle theta(in % degrees), and the element nodal % displacement vector u.
 		double x = theta * pi / 180;
 		double C = cos(x);
 		double S = sin(x);
-		Mat y = E / L * Mat({-C, -S, C, S}) * u;
+		Mat y = E / L * Mat({-C, -S, C, S}).dot(u);
 		return y;
 	}
 	Mat PlaneTrussInclinedSupport(Mat T, i64 i, double alpha) {
@@ -105,7 +105,7 @@ class TrussSolveFramework {
 	double E, A;
 	vector<TrussPoint> vp;
 	vector<TrussEdge> ve;
-	Mat K;
+	Mat K, U;
 
 public:
 	TrussSolveFramework *initEA(double _e, double _a) {
@@ -132,7 +132,7 @@ public:
 		return this;
 	}
 	TrussSolveFramework *assemble() {
-		K = nc::zeros<double>(6, 6);
+		K = nc::zeros<double>(2 * vp.size(), 2 * vp.size());
 		for (auto &e: ve) {
 			Mat t = PlaneTrussElementStiffness(E, A, e.length, e.theta);
 			K = PlaneTrussAssemble(K, t, e.idxa + 1, e.idxb + 1);
@@ -146,41 +146,84 @@ public:
 	void showK() {
 		cout << K;
 	}
-	Mat calculateDis(Mat boundaryConditions) {
-		Mat k = nc::zeros<double>(3, 3);
-		vector<int> v = {3, 5, 6};
-		for (int i = 0; i < 3; ++i) {
-			for (int j = 0; j < 3; ++j) {
+	Mat calculateDis(Mat boundaryConditions, vector<int> v) {
+		Mat k = nc::zeros<double>(v.size(), v.size());
+		for (int i = 0; i < v.size(); ++i) {
+			for (int j = 0; j < v.size(); ++j) {
 				k(i, j) = K(v[i] - 1, v[j] - 1);
 			}
 		}
 		Mat f = boundaryConditions.transpose();
 		return nc::linalg::inv(k).dot(f);
 	}
-	Mat calculateStress(Mat boundaryConditions) {
-		Mat u = calculateDis(boundaryConditions);
-		Mat U = nc::zeros<double>(6, 1);
-		U(2, 0) = u(0, 0);
-		U(4, 0) = u(1, 0);
-		U(5, 0) = u(2, 0);
+	Mat calculateStress(Mat boundaryConditions, vector<int> v) {
+		Mat u = calculateDis(boundaryConditions, v);
+		U = nc::zeros<double>(vp.size() * 2, 1);
+		for (int i = 0; i < v.size(); ++i) {
+			U(v[i] - 1, 0) = u(i, 0);
+		}
 		Mat F = K.dot(U);
-		cout << F << endl;
+		return F;
+	}
+	vector<double> calculateSigma() {
+		vector<double> sigma;
+		for (int i = 0; i < ve.size(); ++i) {
+			Mat u = Mat({U(ve[i].idxa * 2, 0), U(ve[i].idxa * 2 + 1, 0), U(ve[i].idxb * 2, 0), U(ve[i].idxb * 2 + 1, 0)}).transpose();
+			sigma.push_back(PlaneTrussElementStress(E, ve[i].length, ve[i].theta, u)(0, 0));
+		}
+		return sigma;
 	}
 };
 
-
-int main() {
+void problem1() {
 	TrussSolveFramework *tsf = new TrussSolveFramework();
-	tsf->initEA(210e6, 1e-4)
-	        ->add(TrussPoint(-2, 3))// point0
-	        ->add(TrussPoint(2, 3)) // point1
-	        ->add(TrussPoint(0, 0)) // point2
-	        ->add(TrussEdge(0, 1))  // edge1
-	        ->add(TrussEdge(0, 2))  // edge2
-	        ->add(TrussEdge(1, 2))  // edge3
+	tsf->initEA(2e11, 4e-4)
+	        ->add(TrussPoint(0, 0))                        // point0
+	        ->add(TrussPoint(0, 3))                        // point1
+	        ->add(TrussPoint(3.0 / sqrt(2), 3.0 / sqrt(2)))// point2
+	        ->add(TrussPoint(3, 0))                        // point3
+	        ->add(TrussEdge(0, 1))                         // edge1
+	        ->add(TrussEdge(0, 2))                         // edge2
+	        ->add(TrussEdge(0, 3))                         // edge3
 	        ->assemble();
+	cout << "K-matrix:\n";
 	tsf->showK();
 
-	auto solu = tsf->calculateStress({0, 5, -10});
+	auto solu = tsf->calculateStress({-10, -20}, {1, 2});
+	cout << "Stress:\n";
 	cout << solu;
+	auto sigma = tsf->calculateSigma();
+	cout << "Sigma:\n";
+	for (auto &i: sigma) {
+		cout << i << endl;
+	}
+}
+
+void problem2() {
+	TrussSolveFramework *tsf = new TrussSolveFramework();
+	tsf->initEA(2e11, 4e-4)
+	        ->add(TrussPoint(0, 0))                        // point0
+	        ->add(TrussPoint(0, 3))                        // point1
+	        ->add(TrussPoint(3.0 / sqrt(2), 3.0 / sqrt(2)))// point2
+	        ->add(TrussPoint(3, 0))                        // point3
+	        ->add(TrussEdge(0, 1))                         // edge1
+	        ->add(TrussEdge(0, 2))                         // edge2
+	        ->add(TrussEdge(0, 3))                         // edge3
+	        ->assemble();
+	cout << "K-matrix:\n";
+	tsf->showK();
+
+	auto solu = tsf->calculateStress({-10, -20}, {1, 2});
+	cout << "Stress:\n";
+	cout << solu;
+	auto sigma = tsf->calculateSigma();
+	cout << "Sigma:\n";
+	for (auto &i: sigma) {
+		cout << i << endl;
+	}
+}
+
+
+int main() {
+	problem2();
 }
